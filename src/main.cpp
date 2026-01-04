@@ -40,7 +40,7 @@ void loop() {
 
         plantController.process();
         
-        String jsonMsg = "{\"moisture\": " + String(random(20, 90)) + "}"; 
+        String jsonMsg = "{\"moisture\": " + String(plantController.lastMoisture) + "}";        
         
         Serial.print("Sending to Server: ");
         Serial.println(jsonMsg);

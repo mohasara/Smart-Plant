@@ -13,6 +13,8 @@ private:
     int highThreshold;
 
 public:
+    int lastMoisture = 0;
+    
     PlantController(int sPin, int rPin, int dry, int wet, int lowTh, int highTh);
     
     void begin();

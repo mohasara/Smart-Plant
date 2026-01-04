@@ -28,6 +28,8 @@ void PlantController::process() {
     int moisturePercent = map(averageRaw, dryValue, wetValue, 0, 100);
     moisturePercent = constrain(moisturePercent, 0, 100);
 
+    lastMoisture = moisturePercent;    
+    
     Serial.print("Raw: "); //remove it at the end
     Serial.print(averageRaw); // remove it at the end
     Serial.print(" | Moisture: ");
