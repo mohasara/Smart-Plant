@@ -1,3 +1,9 @@
+#include <Arduino.h>
+#include "ConfigLoader.h"
+#include "NetworkHandler.h"
+#include "PlantController.h"
+#include "MqttHandler.h"
+
 int SENSORPIN = 34;
 int RELAYPIN = 5;
 int MINVOLTAGEOFSENSOR = 4095;

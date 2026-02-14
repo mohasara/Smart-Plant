@@ -38,9 +38,9 @@ void PlantController::process() {
 
     if (moisturePercent < lowThreshold) {
         Serial.println("Warning: Soil is DRY! Turning on pump...");
-        digitalWrite(relayPin, LOW);
-        
-        delay(2000);
+        digitalWrite(relayPin, LOW);        
+
+        delay(pumpDuration);
         
         digitalWrite(relayPin, HIGH);
         Serial.println("Pump paused for absorption...");
@@ -48,5 +48,31 @@ void PlantController::process() {
     } 
     else if (moisturePercent > highThreshold) {
         digitalWrite(relayPin, HIGH);
+    }
+}
+
+    void PlantController::updateThresholds(int low, int high) {
+    lowThreshold = low;
+    highThreshold = high;
+    Serial.print("New Thresholds Set -> Low: ");
+    Serial.print(low);
+    Serial.print(", High: ");
+    Serial.println(high);
+}
+
+void PlantController::handleCommand(String jsonCommand) {
+    StaticJsonDocument<200> doc;
+    DeserializationError error = deserializeJson(doc, jsonCommand);
+    if (error) return;
+
+    if (doc.containsKey("low") && doc.containsKey("high")) {
+        lowThreshold = doc["low"];
+        highThreshold = doc["high"];
+    }
+
+    if (doc.containsKey("pTime")) {
+        pumpDuration = doc["pTime"];
+        Serial.print("New Pump Duration: ");
+        Serial.println(pumpDuration);
     }
 }

@@ -6,8 +6,9 @@
 
 class MqttHandler {
 private:
-    const char* mqtt_server = "broker.emqx.io";
-    const char* topic = "uni/project/smartplant/data";
+    const char* mqtt_server = "test.mosquitto.org"; 
+    const char* topic_data = "uni/project/smartplant/data";
+    const char* topic_command = "uni/project/smartplant/command";
     WiFiClient espClient;
     PubSubClient client;
     String clientId;
@@ -17,6 +18,7 @@ public:
     void setup();
     void loop();
     void publish(String message);
+    void setCallback(std::function<void(char*, uint8_t*, unsigned int)> callback);
 };
 
 #endif

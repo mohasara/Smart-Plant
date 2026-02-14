@@ -5,21 +5,15 @@ void NetworkHandler::connect(String ssid, String password) {
     Serial.println(ssid);
     
     WiFi.begin(ssid.c_str(), password.c_str());
-
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    
-    Serial.println("\nWiFi Connected!");
-    Serial.print("IP Address: ");
-    Serial.println(WiFi.localIP());
 }
 
 void NetworkHandler::checkConnection() {
     if(WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi Lost! Reconnecting...");
-        WiFi.disconnect();
-        WiFi.reconnect();
+        static unsigned long lastLog = 0;
+        if (millis() - lastLog > 5000) {
+            lastLog = millis();
+            Serial.println("WiFi Disconnected. Reconnecting in background...");
+            WiFi.reconnect();
+        }
     }
 }
