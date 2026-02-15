@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Smart Plant Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #121212; color: #ffffff; font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; padding: 15px; text-align: center; padding-bottom: 50px;}
+        
+        .card {
+            background: #1e1e1e; border-radius: 20px; padding: 20px; margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); border: 1px solid #333;
+            transition: all 0.3s ease;
+        }
+
+        .tank-alert {
+            background: linear-gradient(135deg, #d32f2f, #ff5252);
+            border: 2px solid #ff8a80;
+            animation: pulse 1.5s infinite;
+            display: none;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.7); }
+            70% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(255, 82, 82, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 82, 82, 0); }
+        }
+
+        .moisture-val { font-size: 70px; font-weight: bold; color: #00e676; margin: 5px 0; text-shadow: 0 0 20px rgba(0,230,118,0.2); }
+        .status-text { font-size: 18px; color: #b0bec5; margin-bottom: 10px; }
+
+        .input-row { display: flex; justify-content: space-between; align-items: center; margin: 15px 0; border-bottom: 1px solid #333; padding-bottom: 10px;}
+        label { font-size: 14px; color: #ccc; }
+        input { 
+            background: #2c2c2c; border: 1px solid #444; color: #03a9f4; padding: 10px; 
+            border-radius: 8px; width: 70px; text-align: center; font-size: 16px; font-weight: bold;
+        }
+        input.error { border: 1px solid #ff5252; color: #ff5252; }
+        
+        button {
+            background: linear-gradient(90deg, #0288d1, #29b6f6); color: white; font-weight: bold; border: none;
+            padding: 15px; width: 100%; border-radius: 12px; font-size: 16px; margin-top: 10px; cursor: pointer;
+        }
+        button:active { transform: scale(0.98); }
+
+        /* تاریخچه */
+        .history-item { 
+            padding: 12px; border-bottom: 1px solid #333; font-size: 13px; 
+            display: flex; justify-content: space-between; align-items: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="tankAlert" class="card tank-alert">
+        <h2 style="margin: 0; color: white;">⛔ مخزن آب خالی است!</h2>
+        <p style="color: white; margin-top: 5px;">پمپ جهت محافظت قطع شد. لطفاً مخزن را پر کنید.</p>
+    </div>
+
+    <div class="card">
+        <div style="font-size: 14px; color: #aaa;">رطوبت خاک</div>
+        <div class="moisture-val" id="moisture">--%</div>
+        <div class="status-text" id="status">در انتظار اتصال...</div>
+    </div>
+
+    <div class="card">
+        <h3 style="margin:0 0 15px 0; font-size: 16px; color: #aaa;">نمودار زنده (۲ دقیقه اخیر)</h3>
+        <canvas id="moistureChart" height="200"></canvas>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top:0; color:#29b6f6;">⚙️ تنظیمات دستگاه</h3>
+        
+        <div class="input-row">
+            <label>شروع آبیاری (مینیمم):</label>
+            <input type="number" id="lowInput" value="30" min="0" max="100">
+        </div>
+        
+        <div class="input-row">
+            <label>توقف آبیاری (ماکزیمم):</label>
+            <input type="number" id="highInput" value="70" min="0" max="100">
+        </div>
+
+        <div class="input-row">
+            <label>مدت زمان پمپ (ثانیه):</label>
+            <input type="number" id="timeInput" value="2" min="1"> 
+        </div>
+
+        <button onclick="sendSettings()">ارسال تنظیمات</button>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top:0; color:#ffab40;">📋 گزارش رویدادها</h3>
+        <div id="historyList"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let localChartData = []; 
+
+        const ctx = document.getElementById('moistureChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'رطوبت',
+                    data: [],
+                    borderColor: '#00e676',
+                    backgroundColor: 'rgba(0, 230, 118, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    fill: true
+                }]
+            },
+            options: {
+                animation: false,
+                scales: {
+                    y: { beginAtZero: true, max: 100, grid: { color: '#333' } },
+                    x: { display: false }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        function updateChartDisplay() {
+            const now = Date.now();
+            const twoMinutesAgo = now - (2 * 60 * 1000); // 120 ثانیه قبل
+            
+            localChartData = localChartData.filter(d => d.ts > twoMinutesAgo);
+            
+            chart.data.labels = localChartData.map(d => d.label);
+            chart.data.datasets[0].data = localChartData.map(d => d.value);
+            chart.update();
+        }
+
+        socket.on('init-chart', (serverData) => {
+            localChartData = serverData;
+            updateChartDisplay();
+        });
+
+        socket.on('sensor-data', (packet) => {
+            const val = packet.current.moisture;
+            const isEmpty = packet.current.empty; // وضعیت مخزن
+
+            // 1. مدیریت هشدار مخزن
+            const alertBox = document.getElementById('tankAlert');
+            const statusEl = document.getElementById('status');
+
+            if (isEmpty) {
+                alertBox.style.display = "block";
+                statusEl.innerText = "⛔ خطا: مخزن خالی";
+                statusEl.style.color = "#ff5252";
+                if(navigator.vibrate) navigator.vibrate([200, 100, 200]); // ویبره هشدار
+            } else {
+                alertBox.style.display = "none";
+                
+                document.getElementById('moisture').innerText = val + "%";
+                if(val < 30) {
+                    statusEl.innerText = "⚠️ پمپ روشن (آبیاری)";
+                    statusEl.style.color = "#ff5252";
+                    chart.data.datasets[0].borderColor = '#ff5252';
+                } else {
+                    statusEl.innerText = "✅ وضعیت نرمال";
+                    statusEl.style.color = "#00e676";
+                    chart.data.datasets[0].borderColor = '#00e676';
+                }
+            }
+
+            localChartData.push(packet.point);
+            updateChartDisplay();
+        });
+
+        socket.on('history-update', (history) => {
+            const list = document.getElementById('historyList');
+            list.innerHTML = "";
+            history.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'history-item';
+                div.innerHTML = `<span style="color:#aaa;">${item.time}</span><span style="color:#ffab40;">${item.status}</span>`;
+                list.appendChild(div);
+            });
+        });
+
+        function sendSettings() {
+            const lowEl = document.getElementById('lowInput');
+            const highEl = document.getElementById('highInput');
+            const timeEl = document.getElementById('timeInput');
+
+            lowEl.classList.remove('error');
+            highEl.classList.remove('error');
+            timeEl.classList.remove('error');
+
+            const low = parseInt(lowEl.value);
+            const high = parseInt(highEl.value);
+            const seconds = parseInt(timeEl.value);
+
+            if (low < 0 || low > 100) {
+                lowEl.classList.add('error');
+                alert("عدد شروع باید بین ۰ تا ۱۰۰ باشد.");
+                return;
+            }
+            if (high < 0 || high > 100) {
+                highEl.classList.add('error');
+                alert("عدد توقف باید بین ۰ تا ۱۰۰ باشد.");
+                return;
+            }
+            if (low >= high) {
+                lowEl.classList.add('error');
+                highEl.classList.add('error');
+                alert("عدد 'توقف' باید بزرگتر از 'شروع' باشد.");
+                return;
+            }
+            if (seconds <= 0) {
+                timeEl.classList.add('error');
+                alert("زمان پمپ باید حداقل ۱ ثانیه باشد.");
+                return;
+            }
+
+            const settings = { 
+                low: low, 
+                high: high, 
+                pTime: seconds * 1000 
+            };
+            
+            socket.emit('send-settings', settings);
+            if(navigator.vibrate) navigator.vibrate(50);
+            alert('✅ تنظیمات با موفقیت ارسال شد.');
+        }
+    </script>
+</body>
+</html>

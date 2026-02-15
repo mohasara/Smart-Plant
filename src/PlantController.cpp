@@ -1,7 +1,8 @@
 #include "PlantController.h"
 
-PlantController::PlantController(int sPin, int rPin, int dry, int wet, int lowTh, int highTh) {
+PlantController::PlantController(int sPin, int wPin, int rPin, int dry, int wet, int lowTh, int highTh) {
     sensorPin = sPin;
+    waterSensorPin = wPin; // *** جدید ***
     relayPin = rPin;
     dryValue = dry;
     wetValue = wet;
@@ -11,42 +12,48 @@ PlantController::PlantController(int sPin, int rPin, int dry, int wet, int lowTh
 
 void PlantController::begin() {
     pinMode(sensorPin, INPUT);
+    pinMode(waterSensorPin, INPUT);
     pinMode(relayPin, OUTPUT);
     digitalWrite(relayPin, HIGH);
 }
 
 void PlantController::process() {
-
     long sum = 0;
-    int samples = 50;
-    for (int i = 0; i < samples; i++) {
+    for (int i = 0; i < 20; i++) {
         sum += analogRead(sensorPin);
-        delay(5);
+        delay(2);
     }
-    int averageRaw = sum / samples;
+    int avgSoil = sum / 20;
+    int soilPercent = map(avgSoil, dryValue, wetValue, 0, 100);
+    soilPercent = constrain(soilPercent, 0, 100);
+    lastMoisture = soilPercent;
 
-    int moisturePercent = map(averageRaw, dryValue, wetValue, 0, 100);
-    moisturePercent = constrain(moisturePercent, 0, 100);
+    int waterRaw = analogRead(waterSensorPin);
 
-    lastMoisture = moisturePercent;    
-    
-    Serial.print("Raw: "); //remove it at the end
-    Serial.print(averageRaw); // remove it at the end
-    Serial.print(" | Moisture: ");
-    Serial.print(moisturePercent);
-    Serial.println("%");
+    if (waterRaw > 3000) {
+        isTankEmpty = true;
+    } else {
+        isTankEmpty = false;
+    }
 
-    if (moisturePercent < lowThreshold) {
-        Serial.println("Warning: Soil is DRY! Turning on pump...");
-        digitalWrite(relayPin, LOW);        
+    Serial.print("Soil: "); Serial.print(soilPercent); Serial.print("% | ");
+    Serial.print("Tank Raw: "); Serial.print(waterRaw);
+    if(isTankEmpty) Serial.print(" (EMPTY!)");
+    Serial.println();
 
-        delay(pumpDuration);
-        
-        digitalWrite(relayPin, HIGH);
-        Serial.println("Pump paused for absorption...");
-        delay(3000); 
+    if (soilPercent < lowThreshold) {
+        if (isTankEmpty) {
+            Serial.println("Error: Soil is DRY but Tank is EMPTY! Pump blocked.");
+        } else {
+            Serial.println("Soil is DRY & Tank OK. Watering...");
+            digitalWrite(relayPin, LOW);
+            delay(pumpDuration);
+            digitalWrite(relayPin, HIGH);
+            Serial.println("Pump finished.");
+            delay(2000); 
+        }
     } 
-    else if (moisturePercent > highThreshold) {
+    else if (soilPercent > highThreshold) {
         digitalWrite(relayPin, HIGH);
     }
 }

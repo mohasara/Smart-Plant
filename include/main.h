@@ -13,3 +13,5 @@ int HIGHERTHRESHOLD = 70;
 
 unsigned long previousMillis = 0;
 const long interval = 5000;
+
+int WATERSENSORPIN = 35;

@@ -2,8 +2,7 @@
 
 ConfigLoader configLoader;
 NetworkHandler networkHandler;
-PlantController plantController(SENSORPIN, RELAYPIN, MINVOLTAGEOFSENSOR, MAXVOLTAGEOFSENSOR, LOWERTHRESHOLD, HIGHERTHRESHOLD); 
-MqttHandler mqttHandler;
+PlantController plantController(SENSORPIN, WATERSENSORPIN, RELAYPIN, MINVOLTAGEOFSENSOR, MAXVOLTAGEOFSENSOR, LOWERTHRESHOLD, HIGHERTHRESHOLD);MqttHandler mqttHandler;
 
 // const char* commandTopic = "uni/project/smartplant/command";
 
@@ -48,9 +47,9 @@ void loop() {
         previousMillis = currentMillis;
 
         plantController.process();
-        
-        String jsonMsg = "{\"moisture\": " + String(plantController.lastMoisture) + "}";
-        
+                
+        String jsonMsg = "{\"moisture\": " + String(plantController.lastMoisture) + 
+                                ", \"empty\": " + (plantController.isTankEmpty ? "true" : "false") + "}";
         if (WiFi.status() == WL_CONNECTED) {
             Serial.print("Sending to Server: ");
             Serial.println(jsonMsg);

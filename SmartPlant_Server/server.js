@@ -18,71 +18,85 @@ const io = socketIo(server);
 app.use(express.static('public'));
 app.use(express.json());
 
-let history = [];
+let eventHistory = []; 
+let chartData = [];    
+let lastWateringLogTime = 0; 
 
 if (fs.existsSync(HISTORY_FILE)) {
     try {
-        history = JSON.parse(fs.readFileSync(HISTORY_FILE));
-    } catch (e) { console.error("History file corrupted, starting new."); }
+        const savedData = JSON.parse(fs.readFileSync(HISTORY_FILE));
+        eventHistory = savedData.events || [];
+    } catch (e) {}
 }
 
-function saveToHistory(moisture) {
-
-    const timestamp = new Date().toLocaleString('fa-IR');
-    
-    const entry = {
-        time: timestamp,
-        moisture: moisture,
-        status: moisture < 30 ? "آبیاری شد 💧" : "ثبت وضعیت ✅"
-    };
-
-    history.unshift(entry);
-    if (history.length > 50) history.pop();
-    
-    fs.writeFileSync(HISTORY_FILE, JSON.stringify(history));
-    
-    io.emit('history-update', history);
-}
-
-console.log("Connecting to MQTT...");
+console.log("Starting Server...");
 const mqttClient = mqtt.connect(BROKER_URL);
 
 mqttClient.on('connect', () => {
-    console.log(`MQTT Connected! Listening on: ${TOPIC_DATA}`);
+    console.log(`MQTT Connected! Listening...`);
     mqttClient.subscribe(TOPIC_DATA);
 });
 
 mqttClient.on('message', (topic, message) => {
-    const msgString = message.toString();
-    console.log(`Data received: ${msgString}`);
-    
     try {
-        const data = JSON.parse(msgString);
-        
-        io.emit('sensor-data', data);
-        
-        saveToHistory(data.moisture);
-        
-    } catch (e) {
-        console.error("Invalid JSON from ESP32");
-    }
+        const data = JSON.parse(message.toString());
+        const now = Date.now();
+        const timeStr = new Date().toLocaleTimeString('fa-IR');
+
+        const newPoint = {
+            ts: now,
+            label: timeStr,
+            value: data.moisture
+        };
+
+        chartData.push(newPoint);
+        const fiveMinutesAgo = now - (5 * 60 * 1000);
+        chartData = chartData.filter(point => point.ts > fiveMinutesAgo);
+
+        io.emit('sensor-data', { 
+            current: data, 
+            point: newPoint 
+        });
+
+        if (data.empty === true) {
+             if (now - lastWateringLogTime > 300000) { 
+                lastWateringLogTime = now;
+                const entry = {
+                    time: new Date().toLocaleString('fa-IR'),
+                    status: "⚠️ خطا: مخزن آب خالی است!",
+                    moisture: data.moisture + "%"
+                };
+                eventHistory.unshift(entry);
+                if(eventHistory.length > 20) eventHistory.pop();
+                io.emit('history-update', eventHistory);
+             }
+        }
+        else if (data.moisture < 30) {
+            if (now - lastWateringLogTime > 60000) { 
+                lastWateringLogTime = now;
+                const entry = {
+                    time: new Date().toLocaleString('fa-IR'),
+                    moisture: data.moisture,
+                    status: "آغاز آبیاری خودکار 💧"
+                };
+                eventHistory.unshift(entry);
+                if (eventHistory.length > 20) eventHistory.pop();
+                fs.writeFileSync(HISTORY_FILE, JSON.stringify({ events: eventHistory }));
+                io.emit('history-update', eventHistory);
+            }
+        }
+
+    } catch (e) { console.error(e); }
 });
 
 io.on('connection', (socket) => {
-    console.log('Mobile App Connected');
-    
-    socket.emit('history-update', history);
+    socket.emit('history-update', eventHistory);
+    socket.emit('init-chart', chartData);
 
     socket.on('send-settings', (settings) => {
-        console.log('Settings update received:', settings);
-        
-        const commandJson = JSON.stringify(settings);
-        mqttClient.publish(TOPIC_COMMAND, commandJson);
+        console.log("Settings Update:", settings);
+        mqttClient.publish(TOPIC_COMMAND, JSON.stringify(settings));
     });
 });
 
-server.listen(PORT, () => {
-    console.log(`-----------------------------------------------`);
-    console.log(`Server running. Mobile App URL: http://localhost:${PORT}`);
-    console.log(`-----------------------------------------------`);
-});
+server.listen(PORT, () => console.log(`Server Running: http://localhost:${PORT}`));
